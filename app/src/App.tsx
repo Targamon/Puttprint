@@ -11,12 +11,13 @@ import { nativePos } from './native'
 import PlayButton from './PlayButton'
 import ProSheet from './ProSheet'
 import { isPro, userAddedCount } from './pro'
+import Analysis from './Analysis'
 
 type Gate = (reason: string, fn: () => void, trialFirst?: boolean) => void
 let proNow = isPro()
 
 export const COLORS = ['#1e90ff', '#ff3b30', '#ffd60a', '#e040fb'] // high-contrast dots
-type Screen = 'login' | 'courses' | 'add' | 'setup' | 'play' | 'summary' | 'mp' | 'room' | 'demo'
+type Screen = 'login' | 'courses' | 'add' | 'setup' | 'play' | 'summary' | 'mp' | 'room' | 'demo' | 'analysis'
 
 export default function App() {
   const [profile, setProfile] = useState<Profile | null>(loadProfile())
@@ -32,7 +33,8 @@ export default function App() {
   return <div className="phone">
     <div className={'syncdot ' + (sy.online ? 'on' : '')} title={sy.err ?? 'synced'}>{sy.online ? '☁ synced' : '⚠ ' + (sy.err ?? 'offline')}</div>
     {screen === 'login' && <Login onDone={async p => { const np = await cloudLogin(p.name, p.color); setProfile(np); setScreen('courses') }} initial={profile} />}
-    {screen === 'courses' && profile && <Courses profile={profile} onPick={c => { setCourse(c); setScreen('setup') }} onAdd={() => userAddedCount() >= 1 ? gate('Free includes 1 added course. Pro adds unlimited courses.', () => setScreen('add')) : setScreen('add')} onProfile={() => setScreen('login')} onJoin={() => gate('Multiplayer rooms are Pro.', () => { setMp({ mode: 'join' }); setScreen('mp') })} onDemo={() => setScreen('demo')} />}
+    {screen === 'courses' && profile && <Courses profile={profile} onPick={c => { setCourse(c); setScreen('setup') }} onAdd={() => userAddedCount() >= 1 ? gate('Free includes 1 added course. Pro adds unlimited courses.', () => setScreen('add')) : setScreen('add')} onProfile={() => setScreen('login')} onJoin={() => gate('Multiplayer rooms are Pro.', () => { setMp({ mode: 'join' }); setScreen('mp') })} onDemo={() => setScreen('demo')} onAnalysis={() => setScreen('analysis')} />}
+    {screen === 'analysis' && profile && <Analysis profile={loadProfile() ?? profile} onBack={() => setScreen('courses')} />}
     {screen === 'demo' && <LaunchDemo onBack={() => setScreen(profile ? 'courses' : 'login')} />}
     {screen === 'add' && <AddCourse onDone={() => setScreen('courses')} />}
     {screen === 'setup' && course && profile && <Setup course={course} profile={profile} onBack={() => setScreen('courses')}
@@ -42,7 +44,7 @@ export default function App() {
     {screen === 'room' && mp?.code && course && profile && <RoomPlay code={mp.code} course={course} profile={profile}
       onFinish={r => { saveRound(r); setProfile(loadProfile()); setRound(r); setScreen('summary') }} />}
     {screen === 'play' && course && round && <Play course={course} round={round} learned={usable(profile?.clubAvgs)} onFinish={r => { const done = { ...r, complete: true, date: Date.now() }; saveRound(done); setProfile(loadProfile()); setRound(done); setScreen('summary') }} />}
-    {screen === 'summary' && course && round && <Summary course={course} round={round} onHome={() => setScreen('courses')} onUnlock={() => gate('Unlock Best Ghost — see your gold line next time.', () => {}, true)} />}
+    {screen === 'summary' && course && round && <Summary course={course} round={round} onHome={() => setScreen('courses')} onUnlock={() => gate('Unlock Best Ghost — see your gold line next time.', () => {}, true)} onAnalysis={() => setScreen('analysis')} />}
     {sheet && <ProSheet reason={sheet.reason} trialFirst={sheet.trial} onClose={() => setSheet(null)} onUnlocked={() => { const t = sheet.then; setPro(true); proNow = true; setSheet(null); t?.() }} />}
   </div>
 }
@@ -63,11 +65,12 @@ function Login({ onDone, initial }: { onDone: (p: Profile) => void | Promise<voi
   </div>
 }
 
-function Courses({ profile, onPick, onAdd, onProfile, onJoin, onDemo }: { profile: Profile; onPick: (c: Course) => void; onAdd: () => void; onProfile: () => void; onJoin: () => void; onDemo: () => void }) {
+function Courses({ profile, onPick, onAdd, onProfile, onJoin, onDemo, onAnalysis }: { profile: Profile; onPick: (c: Course) => void; onAdd: () => void; onProfile: () => void; onJoin: () => void; onDemo: () => void; onAnalysis: () => void }) {
   const cs = loadCourses(), rounds = loadRounds()
   return <div className="screen">
     <Header title="Choose course" sub={`Hi ${profile.name}`} />
     <div className="tabs"><button className="tab on">Courses</button><button className="tab" onClick={onAdd}>+ Add course</button><button className="tab" onClick={onJoin}>Join room</button><button className="tab" onClick={onDemo}>Demo</button><button className="tab" onClick={onProfile}>Profile</button></div>
+    <button className="gold" onClick={onAnalysis}>📊 Player Analysis</button>
     <ClubCard profile={profile} />
     {cs.map(c => { const n = rounds.filter(r => r.courseId === c.id && r.complete).length
       return <button key={c.id} className="card" onClick={() => onPick(c)}>
@@ -215,7 +218,7 @@ function Play({ course, round, onFinish, learned }: { course: Course; round: Rou
 }
 const fmt = (d: number) => d === 0 ? 'E' : d > 0 ? '+' + d : '' + d
 
-function Summary({ course, round, onHome, onUnlock }: { course: Course; round: Round; onHome: () => void; onUnlock: () => void }) {
+function Summary({ course, round, onHome, onUnlock, onAnalysis }: { course: Course; round: Round; onHome: () => void; onUnlock: () => void; onAnalysis: () => void }) {
   const nums = Object.keys(round.holes).map(Number).sort((a, b) => a - b)
   const par = nums.reduce((s, n) => s + course.holes[n - 1].par, 0)
   const prior = loadRounds().filter(x => x.courseId === course.id && x.complete && x.id !== round.id)
@@ -228,6 +231,7 @@ function Summary({ course, round, onHome, onUnlock }: { course: Course; round: R
         <tr className="tot"><td>Tot</td><td>{par}</td>{round.players.map((_, i) => <td key={i}>{roundScore(round, i)} ({fmt(roundScore(round, i) - par)})</td>)}<td className="gold-t">{prior.length ? nums.reduce((s, n) => s + (g?.holes[n]?.score ?? 0), 0) : '–'}</td></tr></tbody></table>
     {!proNow && <button className="probanner" onClick={onUnlock}>👻 Unlock Best Ghost — Try Pro free 7 days</button>}
     <p className="muted small">Saved. Your Last / Best / Perfect ghosts on {course.shortName} now include this round.</p>
+    <button className="ghostbtn" onClick={onAnalysis}>📊 Player Analysis</button>
     <button className="gold" onClick={onHome}>Done</button>
   </div>
 }
