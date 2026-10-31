@@ -1,0 +1,9 @@
+**/node_modules
+app/dist
+app/android
+app/ios
+server/data
+server/public/app
+demo
+tests
+.git

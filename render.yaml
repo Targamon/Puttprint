@@ -1,0 +1,17 @@
+# Render Blueprint: one Docker web service (app + API + /privacy /support).
+services:
+  - type: web
+    name: puttprint
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter          # "free" works too, but free has NO disk -> database resets on every restart/deploy
+    healthCheckPath: /health
+    envVars:
+      - key: DATA_DIR
+        value: /data
+      - key: CORS_ORIGIN    # optional; leave unset to allow all origins
+        sync: false
+    disk:                   # persistent SQLite (paid plans only; delete this block on free)
+      name: puttprint-data
+      mountPath: /data
+      sizeGB: 1

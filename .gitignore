@@ -1,0 +1,11 @@
+node_modules/
+**/node_modules/
+dist/
+**/.DS_Store
+*.log
+server/data/*.db
+server/data/*.db-*
+app/android/
+app/ios/
+app/dist/
+**/.capacitor/

@@ -1,0 +1,26 @@
+# Fly.io (optional). Run: fly launch --copy-config --no-deploy && fly volumes create puttprint_data --size 1 && fly deploy
+app = "puttprint"
+primary_region = "ewr"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8787"
+  DATA_DIR = "/data"
+
+[mounts]
+  source = "puttprint_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8787
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    path = "/health"
+    interval = "30s"
+    timeout = "5s"
