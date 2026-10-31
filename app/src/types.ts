@@ -10,6 +10,6 @@ export interface Player { name: string; color: string }
 export interface HoleResult { shots: Shot[]; score: number }
 export type GhostMode = 'last' | 'best' | 'perfect'
 export interface Round { id: string; courseId: string; date: number; ghostMode: GhostMode; players: Player[];
-  holes: Record<number, HoleResult[]>; complete: boolean; roomCode?: string }
+  holes: Record<number, HoleResult[]>; complete: boolean; roomCode?: string; startHole?: number }
 export interface ClubAvg { yd: number; n: number }
 export interface Profile { name: string; color: string; userId?: string; token?: string; clubAvgs?: Record<string, ClubAvg> }

@@ -36,7 +36,7 @@ export default function App() {
     {screen === 'demo' && <LaunchDemo onBack={() => setScreen(profile ? 'courses' : 'login')} />}
     {screen === 'add' && <AddCourse onDone={() => setScreen('courses')} />}
     {screen === 'setup' && course && profile && <Setup course={course} profile={profile} onBack={() => setScreen('courses')}
-      gate={gate} onHost={g => gate('Hosting a room is Pro.', () => { setMp({ mode: 'host', ghostMode: g }); setScreen('mp') })} onStart={(players, ghostMode) => { setRound({ id: 'r-' + Date.now().toString(36), courseId: course.id, date: Date.now(), ghostMode, players, holes: {}, complete: false }); setScreen('play') }} />}
+      gate={gate} onHost={g => gate('Hosting a room is Pro.', () => { setMp({ mode: 'host', ghostMode: g }); setScreen('mp') })} onStart={(players, ghostMode, startHole) => { setRound({ id: 'r-' + Date.now().toString(36), courseId: course.id, date: Date.now(), ghostMode, players, holes: {}, complete: false, startHole }); setScreen('play') }} />}
     {screen === 'mp' && mp && profile && <MpLobby profile={profile} course={course} mode={mp.mode} ghostMode={mp.ghostMode ?? 'best'} onBack={() => setScreen('courses')}
       onRoom={(code, c) => { setCourse(c); setMp({ ...mp, code }); setScreen('room') }} />}
     {screen === 'room' && mp?.code && course && profile && <RoomPlay code={mp.code} course={course} profile={profile}
@@ -91,8 +91,8 @@ function AddCourse({ onDone }: { onDone: () => void }) {
   </div>
 }
 
-function Setup({ course, profile, onStart, onBack, onHost, gate }: { gate: Gate; course: Course; profile: Profile; onBack: () => void; onStart: (p: Player[], g: GhostMode) => void; onHost: (g: GhostMode) => void }) {
-  const [mode, setMode] = useState<GhostMode>(proNow ? 'best' : 'last'), [n, setN] = useState(1)
+function Setup({ course, profile, onStart, onBack, onHost, gate }: { gate: Gate; course: Course; profile: Profile; onBack: () => void; onStart: (p: Player[], g: GhostMode, startHole: number) => void; onHost: (g: GhostMode) => void }) {
+  const [mode, setMode] = useState<GhostMode>(proNow ? 'best' : 'last'), [n, setN] = useState(1), [start, setStart] = useState(1)
   const [names, setNames] = useState<string[]>([profile.name, 'Player 2', 'Player 3', 'Player 4'])
   const others = COLORS.filter(c => c !== profile.color), colors = [profile.color, ...others]
   const has = ghostFor(course, mode)
@@ -101,13 +101,15 @@ function Setup({ course, profile, onStart, onBack, onHost, gate }: { gate: Gate;
     <h3>Ghost</h3>
     <div className="seg">{(['last', 'best', 'perfect'] as GhostMode[]).map(m => <button key={m} className={m === mode ? 'on' : ''} onClick={() => m === 'last' ? setMode(m) : gate(`${m === 'best' ? 'Best' : 'Perfect'} ghost is Pro.`, () => setMode(m))}>{m.toUpperCase()}{m !== 'last' && !proNow && <span className="lock">🔒</span>}</button>)}</div>
     <p className="muted small">{has ? `${has.label} ghost ready (${Object.keys(has.holes).length} holes).` : 'No saved rounds here yet — play one to create your ghost.'}</p>
+    <h3>Start on hole</h3>
+    <select className="startsel" aria-label="Start hole" value={start} onChange={e => setStart(+e.target.value)} style={{ fontSize: 18, padding: 8, width: '100%' }}>{course.holes.map(h => <option key={h.number} value={h.number}>Hole {h.number} · Par {h.par}</option>)}</select>
     <h3>Players</h3>
     <div className="seg">{[1, 2, 3, 4].map(k => <button key={k} className={k === n ? 'on' : ''} onClick={() => k === 1 ? setN(k) : gate('Playing with friends is Pro — free is solo.', () => setN(k))}>{k === 1 ? 'Solo' : k}{k > 1 && !proNow && <span className="lock">🔒</span>}</button>)}</div>
     {Array.from({ length: n }, (_, i) => <div key={i} className="prow"><span className="pdot" style={{ background: colors[i] }} />
       <input value={names[i]} disabled={i === 0} onChange={e => setNames(names.map((x, j) => j === i ? e.target.value : x))} /></div>)}
     <p className="muted small">{n > 1 ? 'Pass-the-phone: one device, turn-based.' : 'Solo round.'} Friends on their own phones? Host a room instead.</p>
     <button className="ghostbtn" onClick={() => onHost(mode)}>📡 Host room (each phone syncs)</button>
-    <button className="gold" onClick={() => onStart(Array.from({ length: n }, (_, i) => ({ name: names[i] || `P${i + 1}`, color: colors[i] })), mode)}>Tee off</button>
+    <button className="gold" onClick={() => onStart(Array.from({ length: n }, (_, i) => ({ name: names[i] || `P${i + 1}`, color: colors[i] })), mode, start)}>Tee off{start > 1 ? ` on ${start}` : ''}</button>
   </div>
 }
 
@@ -121,7 +123,8 @@ async function getPos(): Promise<LL | null> {
 export { getPos }
 
 function Play({ course, round, onFinish, learned }: { course: Course; round: Round; onFinish: (r: Round) => void; learned?: Record<string, number> }) {
-  const [hi, setHi] = useState(0)
+  const H = course.holes.length, s0 = Math.min(Math.max((round.startHole ?? 1) - 1, 0), H - 1)
+  const [hi, setHi] = useState(s0), [count, setCount] = useState(1)
   const [r, setR] = useState(round)
   const np = r.players.length
   const [shots, setShots] = useState<Shot[][]>(() => r.players.map(() => []))
@@ -172,8 +175,8 @@ function Play({ course, round, onFinish, learned }: { course: Course; round: Rou
     } else nextPlayer(o)
   }
   function nextHole() {
-    if (hi + 1 >= course.holes.length) return onFinish(r)
-    setHi(hi + 1); setShots(r.players.map(() => [])); setOut(r.players.map(() => false)); setCur(0); setNote('')
+    if (count >= H) return onFinish(r)
+    setHi((hi + 1) % H); setCount(count + 1); setShots(r.players.map(() => [])); setOut(r.players.map(() => false)); setCur(0); setNote('')
   }
   const allOut = out.every(Boolean)
   const tracks = r.players.map((p, i) => ({ color: p.color, shots: i === cur && pending ? [...shots[i], pending] : shots[i] }))
@@ -194,8 +197,8 @@ function Play({ course, round, onFinish, learned }: { course: Course; round: Rou
     {allOut ? <div className="done">
         <div className="big">Hole {hole.number} complete</div>
         {r.players.map((p, i) => <div key={i}><i className="pdot" style={{ background: p.color }} /> {p.name}: {shots[i].length} ({fmt(shots[i].length - hole.par)}){i === 0 && gh ? ` · ghost ${gh.score}` : ''}</div>)}
-        <button className="gold" onClick={nextHole}>{hi + 1 >= course.holes.length ? 'Finish round' : `Next: hole ${hole.number + 1} ›`}</button>
-        {hi + 1 < course.holes.length && <button className="link" onClick={() => onFinish(r)}>Finish round now ({played} hole{played > 1 ? 's' : ''})</button>}
+        <button className="gold" onClick={nextHole}>{count >= H ? 'Finish round' : `Next: hole ${course.holes[(hi + 1) % H].number} ›`}</button>
+        {count < H && <button className="link" onClick={() => onFinish(r)}>Finish round now ({played} hole{played > 1 ? 's' : ''})</button>}
       </div>
       : pending ? <div className="clubs"><div className="cl">Shot {pending.shotIndex + 1} stamped ({pending.positionSource}) — pick club</div>
           <div className="crow">{clubs.map(c => <button key={c} onClick={() => pickClub(c)} className="club">{c}{learned?.[c] ? <small className="avg">your avg {learned[c]}</small> : null}</button>)}</div>
